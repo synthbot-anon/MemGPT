@@ -38,6 +38,17 @@ from memgpt.utils import get_tool_call_id, get_utc_time
 has_shown_warning = False
 grammar_supported_backends = ["koboldcpp", "llamacpp", "webui", "webui-legacy"]
 
+endpoint_completions = {
+    "webui": lambda endpoint, auth_type, auth_key, prompt, context_window, grammar, **kwargs: get_webui_completion(endpoint, auth_type, auth_key, prompt, context_window, grammar=grammar),
+    "webui-legacy": lambda endpoint, auth_type, auth_key, prompt, context_window, grammar, **kwargs: get_webui_completion_legacy(endpoint, auth_type, auth_key, prompt, context_window, grammar=grammar),
+    "lmstudio": lambda endpoint, auth_type, auth_key, prompt, context_window, grammar, **kwargs: get_lmstudio_completion(endpoint, auth_type, auth_key, prompt, context_window, api="completions"),
+    "lmstudio-legacy": lambda endpoint, auth_type, auth_key, prompt, context_window, grammar, **kwargs: get_lmstudio_completion(endpoint, auth_type, auth_key, prompt, context_window, api="chat"),
+    "llamacpp": lambda endpoint, auth_type, auth_key, prompt, context_window, grammar, **kwargs: get_llamacpp_completion(endpoint, auth_type, auth_key, prompt, context_window, grammar=grammar),
+    "koboldcpp": lambda endpoint, auth_type, auth_key, prompt, context_window, grammar, **kwargs: get_koboldcpp_completion(endpoint, auth_type, auth_key, prompt, context_window, grammar=grammar),
+    "ollama": lambda endpoint, auth_type, auth_key, model, prompt, context_window, **kwargs: get_ollama_completion(endpoint, auth_type, auth_key, model, prompt, context_window),
+    "vllm": lambda endpoint, auth_type, auth_key, model, prompt, context_window, user, **kwargs: get_vllm_completion(endpoint, auth_type, auth_key, model, prompt, context_window, user),
+    "groq": lambda endpoint, auth_type, auth_key, model, prompt, context_window, **kwargs: get_groq_completion(endpoint, auth_type, auth_key, model, prompt, context_window),
+}
 
 def get_chat_completion(
     model,
@@ -154,31 +165,18 @@ def get_chat_completion(
             f"Failed to convert ChatCompletion messages into prompt string with wrapper {str(llm_wrapper)} - error: {str(e)}"
         )
 
-    try:
-        if endpoint_type == "webui":
-            result, usage = get_webui_completion(endpoint, auth_type, auth_key, prompt, context_window, grammar=grammar)
-        elif endpoint_type == "webui-legacy":
-            result, usage = get_webui_completion_legacy(endpoint, auth_type, auth_key, prompt, context_window, grammar=grammar)
-        elif endpoint_type == "lmstudio":
-            result, usage = get_lmstudio_completion(endpoint, auth_type, auth_key, prompt, context_window, api="completions")
-        elif endpoint_type == "lmstudio-legacy":
-            result, usage = get_lmstudio_completion(endpoint, auth_type, auth_key, prompt, context_window, api="chat")
-        elif endpoint_type == "llamacpp":
-            result, usage = get_llamacpp_completion(endpoint, auth_type, auth_key, prompt, context_window, grammar=grammar)
-        elif endpoint_type == "koboldcpp":
-            result, usage = get_koboldcpp_completion(endpoint, auth_type, auth_key, prompt, context_window, grammar=grammar)
-        elif endpoint_type == "ollama":
-            result, usage = get_ollama_completion(endpoint, auth_type, auth_key, model, prompt, context_window)
-        elif endpoint_type == "vllm":
-            result, usage = get_vllm_completion(endpoint, auth_type, auth_key, model, prompt, context_window, user)
-        elif endpoint_type == "groq":
-            result, usage = get_groq_completion(endpoint, auth_type, auth_key, model, prompt, context_window)
-        else:
-            raise LocalLLMError(
-                f"Invalid endpoint type {endpoint_type}, please set variable depending on your backend (webui, lmstudio, llamacpp, koboldcpp)"
+    if endpoint_type in endpoint_completions:
+        completion_fn = endpoint_completions[endpoint_type]
+        try:
+            result, usage = completion_fn(
+                endpoint, auth_type, auth_key, model, prompt, context_window, grammar=grammar, user=user
             )
-    except requests.exceptions.ConnectionError as e:
-        raise LocalLLMConnectionError(f"Unable to connect to endpoint {endpoint}")
+        except requests.exceptions.ConnectionError as e:
+            raise LocalLLMConnectionError(f"Unable to connect to endpoint {endpoint}")
+    else:
+        raise LocalLLMError(
+            f"Invalid endpoint type {endpoint_type}, please set variable depending on your backend (webui, lmstudio, llamacpp, koboldcpp)"
+        )
 
     if result is None or result == "":
         raise LocalLLMError(f"Got back an empty response string from {endpoint}")
